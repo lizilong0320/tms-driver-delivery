@@ -27,7 +27,7 @@ export async function GET(
     const tempCount: Record<string, number> = {}
     let totalWeight = 0
     let totalPackages = 0
-    batch.waybills.forEach((wb) => {
+    batch.waybills.forEach((wb: any) => {
       tempCount[wb.temperatureLayer] = (tempCount[wb.temperatureLayer] || 0) + 1
       totalWeight += wb.weight
       totalPackages += wb.packageCount
