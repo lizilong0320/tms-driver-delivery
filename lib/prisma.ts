@@ -45,49 +45,49 @@ function nextId(table: string) {
 }
 
 // Relation resolver
-function resolveIncludes(obj: any, include: any) {
+// Mutates the input object in place to add related fields (matches Prisma's include behavior)
+function resolveIncludes(obj: any, include: any): any {
   if (!include || !obj) return obj;
-  const result = { ...obj };
-  if (include.warehouse) result.warehouse = db.warehouses.find((w: any) => w.id === obj.warehouseId) || null;
-  if (include.shipper) result.shipper = db.shippers.find((s: any) => s.id === obj.shipperId) || null;
+  if (include.warehouse) obj.warehouse = db.warebills && db.warehouses ? (db.warehouses.find((w: any) => w.id === obj.warehouseId) || null) : null;
+  if (include.shipper) obj.shipper = db.shippers ? (db.shippers.find((s: any) => s.id === obj.shipperId) || null) : null;
   if (include.batch) {
     const batch = db.batches.find((b: any) => b.id === obj.batchId);
     if (batch) {
-      result.batch = { ...batch, _count: { waybills: db.waybills.filter((w: any) => w.batchId === batch.id).length } };
+      obj.batch = { ...batch, _count: { waybills: db.waybills.filter((w: any) => w.batchId === batch.id).length } };
       if (include.batch.include?.driver) {
         const driver = db.drivers.find((d: any) => d.id === batch.driverId);
         if (driver) {
-          result.batch.driver = { ...driver };
+          obj.batch.driver = { ...driver };
           if (include.batch.include.driver.include?.user) {
-            result.batch.driver.user = db.users.find((u: any) => u.id === driver.userId) || null;
+            obj.batch.driver.user = db.users.find((u: any) => u.id === driver.userId) || null;
           }
         }
       }
       if (include.batch.include?.waybills) {
-        result.batch.waybills = db.waybills.filter((w: any) => w.batchId === batch.id);
+        obj.batch.waybills = db.waybills.filter((w: any) => w.batchId === batch.id);
       }
     } else {
-      result.batch = null;
+      obj.batch = null;
     }
   }
-  if (include.user) result.user = db.users.find((u: any) => u.id === obj.userId) || null;
+  if (include.user) obj.user = db.users.find((u: any) => u.id === obj.userId) || null;
   if (include.waybills) {
-    result.waybills = db.waybills
+    obj.waybills = db.waybills
       .filter((w: any) => w.batchId === obj.id)
       .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
     if (include.waybills.include) {
-      result.waybills = result.waybills.map((w: any) => resolveIncludes(w, include.waybills.include));
+      obj.waybills = obj.waybills.map((w: any) => resolveIncludes(w, include.waybills.include));
     }
   }
   if (include.batches) {
-    result.batches = db.batches
+    obj.batches = db.batches
       .filter((b: any) => b.driverId === obj.id)
       .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     if (include.batches.include) {
-      result.batches = result.batches.map((b: any) => resolveIncludes(b, include.batches.include));
+      obj.batches = obj.batches.map((b: any) => resolveIncludes(b, include.batches.include));
     }
   }
-  return result;
+  return obj;
 }
 
 // Prisma-compatible API
