@@ -12,6 +12,10 @@ export async function middleware(request: NextRequest) {
 
   // API路由需要检查token
   if (pathname.startsWith('/api/')) {
+    // Public API: ?public=1 or share/print referer
+    if (pathname.startsWith('/api/batches/') && (request.nextUrl.searchParams.get('public') === '1' || request.headers.get('referer')?.includes('/share/') || request.headers.get('referer')?.includes('/print/'))) {
+      return NextResponse.next()
+    }
     if (!token) {
       return NextResponse.json({ error: '未登录' }, { status: 401 })
     }
