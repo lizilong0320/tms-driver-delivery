@@ -33,12 +33,20 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     })
 
-    // Add waybill count to each batch
-    const enriched = batches.map((b: any) => ({
-      ...b,
-      waybillCount: db.waybills.filter((w: any) => w.batchId === b.id).length,
-      driver: db.drivers.find((d: any) => d.id === b.driverId) || null,
-    }))
+    // Add waybill count and driver name/phone to each batch
+    const db_users = (globalThis as any).__tms_db?.users || [];
+    const enriched = batches.map((b: any) => {
+      const driver = db.drivers.find((d: any) => d.id === b.driverId);
+      const driverUser = driver ? db_users.find((u: any) => u.id === driver.userId) : null;
+      return {
+        ...b,
+        waybillCount: db.waybills.filter((w: any) => w.batchId === b.id).length,
+        driver: driver ? { ...driver, name: driverUser?.name || '', phone: driverUser?.phone || '' } : null,
+        driverName: driverUser?.name || '未分配',
+        driverPhone: driverUser?.phone || '',
+        plateNo: driver?.plateNo || '',
+      };
+    })
 
     return NextResponse.json({ total: batches.length, page, pageSize, list: enriched })
   } catch (e) {
