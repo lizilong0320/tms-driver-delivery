@@ -53,7 +53,7 @@ function resolveIncludes(obj: any, include: any) {
   if (include.batch) {
     const batch = db.batches.find((b: any) => b.id === obj.batchId);
     if (batch) {
-      result.batch = { ...batch };
+      result.batch = { ...batch, _count: { waybills: db.waybills.filter((w: any) => w.batchId === batch.id).length } };
       if (include.batch.include?.driver) {
         const driver = db.drivers.find((d: any) => d.id === batch.driverId);
         if (driver) {

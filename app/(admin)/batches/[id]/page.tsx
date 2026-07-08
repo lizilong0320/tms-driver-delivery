@@ -226,6 +226,12 @@ export default function BatchDetailPage() {
           <Button variant="outline" onClick={handlePrint}>
             打印派送单
           </Button>
+          <Button variant="outline" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/share/${id}`); alert('分享链接已复制！司机无需登录即可查看'); }}>
+            📋 分享司机
+          </Button>
+          <Button variant="outline" onClick={() => window.open(`/(driver)/task/${id}`, '_blank')}>
+            📱 司机端预览
+          </Button>
         </div>
       </div>
 

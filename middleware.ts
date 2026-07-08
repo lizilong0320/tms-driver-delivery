@@ -6,7 +6,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // 公开路由
-  if (pathname === '/login' || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/init')) {
+  if (pathname === '/login' || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/init') || pathname.startsWith('/share/') || pathname.startsWith('/print/')) {
     return NextResponse.next()
   }
 

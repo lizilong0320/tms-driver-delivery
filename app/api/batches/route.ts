@@ -20,21 +20,27 @@ export async function GET(request: NextRequest) {
     if (status !== null && status !== '') where.status = parseInt(status)
     if (date) where.deliveryDate = date
 
-    const [total, batches] = await Promise.all([
-      prisma.batch.count({ where }),
-      prisma.batch.findMany({
-        where,
-        include: {
-          driver: { include: { user: true } },
-          _count: { select: { waybills: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-    ])
+    // For driver role, find their driver ID first
+    let queryDriverId = driverId ? parseInt(driverId) : undefined
+    if (!queryDriverId && session.role === 'driver') {
+      const d = await prisma.driver.findUnique({ where: { userId: session.id } })
+      if (d) queryDriverId = d.id
+    }
+    if (queryDriverId) where.driverId = queryDriverId
 
-    return NextResponse.json({ total, page, pageSize, list: batches })
+    const batches = await prisma.batch.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+    })
+
+    // Add waybill count to each batch
+    const enriched = batches.map((b: any) => ({
+      ...b,
+      waybillCount: db.waybills.filter((w: any) => w.batchId === b.id).length,
+      driver: db.drivers.find((d: any) => d.id === b.driverId) || null,
+    }))
+
+    return NextResponse.json({ total: batches.length, page, pageSize, list: enriched })
   } catch (e) {
     console.error(e)
     return NextResponse.json({ error: '服务器错误' }, { status: 500 })
@@ -47,38 +53,45 @@ export async function POST(request: NextRequest) {
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
 
     const { driverId, waybillIds, deliveryDate } = await request.json()
-
     if (!driverId || !waybillIds?.length || !deliveryDate) {
       return NextResponse.json({ error: '参数不完整' }, { status: 400 })
     }
 
-    // 创建批次
+    // Find driver info
+    const driver = await prisma.driver.findUnique({ where: { id: driverId } })
+    if (!driver) return NextResponse.json({ error: '司机不存在' }, { status: 404 })
+    const driverUser = db.users.find((u: any) => u.id === driver.userId)
+
+    // Create batch with driver info
     const batch = await prisma.batch.create({
       data: {
         batchNo: generateBatchNo(),
         driverId,
-        deliveryDate,
-        totalCount: waybillIds.length,
+        driverName: driverUser?.name || '未知',
+        driverPhone: driverUser?.phone || '',
+        plateNo: driver.plateNo || '',
+        deliveryDate: new Date(deliveryDate),
+        totalOrders: waybillIds.length,
+        status: 0,
       },
     })
 
-    // 将运单分配给该批次
+    // Assign waybills to batch
     await prisma.waybill.updateMany({
       where: { id: { in: waybillIds }, status: 0 },
       data: { batchId: batch.id, status: 1 },
     })
 
-    const updated = await prisma.batch.findUnique({
+    // Update batch stats
+    const wbs = db.waybills.filter((w: any) => w.batchId === batch.id)
+    const tw = wbs.reduce((s: number, w: any) => s + w.weight, 0)
+    const tp = wbs.reduce((s: number, w: any) => s + w.packageCount, 0)
+    await prisma.batch.update({
       where: { id: batch.id },
-      include: {
-        driver: { include: { user: true } },
-        waybills: {
-          include: { warehouse: true, shipper: true },
-          orderBy: { sortOrder: 'asc' },
-        },
-      },
+      data: { totalOrders: wbs.length, totalWeight: tw, totalPackages: tp },
     })
 
+    const updated = await prisma.batch.findUnique({ where: { id: batch.id } })
     return NextResponse.json(updated)
   } catch (e) {
     console.error(e)

@@ -16,11 +16,17 @@ export async function GET(request: NextRequest) {
 
     const drivers = await prisma.driver.findMany({
       where,
-      include: { user: { select: { id: true, phone: true, name: true, status: true } } },
       orderBy: { id: 'desc' },
     })
 
-    return NextResponse.json(drivers)
+    // Flatten: add name/phone from user relation
+    const flat = drivers.map((d: any) => ({
+      ...d,
+      name: d.user?.name || '未知',
+      phone: d.user?.phone || '',
+    }))
+
+    return NextResponse.json(flat)
   } catch (e) {
     return NextResponse.json({ error: '服务器错误' }, { status: 500 })
   }

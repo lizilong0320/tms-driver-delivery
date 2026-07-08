@@ -1,356 +1,307 @@
 'use client';
+import { useState, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import { cn, formatDateTime, STATUS_MAP, TEMPERATURE_MAP } from '@/lib/utils';
-
-interface WaybillDetail {
-  id: string;
-  waybillNo: string;
-  status: number;
-  receiverName: string;
-  receiverPhone: string;
-  receiverAddress: string;
-  receiverLng?: number;
-  receiverLat?: number;
-  shipperName: string;
-  temperatureType: string;
-  goodsType: string;
-  packageCount: number;
-  weight: number;
-  codAmount?: number;
-  signRequirement?: string;
-  remark?: string;
-  signRecord?: {
-    type: string;
-    signTime: string;
-    proxyName?: string;
-    proxyRelation?: string;
-    photos?: string[];
-    signature?: string;
-  };
-  exceptionRecord?: {
-    type: string;
-    description: string;
-    createdAt: string;
-    photos?: string[];
-  };
+interface StepState {
+  arrived: boolean;
+  completed: boolean;
+  loading: boolean;
 }
 
-export default function TaskDetailPage() {
+export default function DriverTaskDetail() {
+  const { id } = useParams();
   const router = useRouter();
-  const params = useParams();
-  const id = params.id as string;
-
-  const [waybill, setWaybill] = useState<WaybillDetail | null>(null);
+  const [batch, setBatch] = useState<any>(null);
+  const [waybills, setWaybills] = useState<any[]>([]);
+  const [steps, setSteps] = useState<Record<number, StepState>>({});
+  const [batchStarted, setBatchStarted] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [arrived, setArrived] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [currentTab, setCurrentTab] = useState(0);
 
-  const fetchWaybill = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const res = await fetch(`/api/waybills/${id}`);
-      if (!res.ok) throw new Error('获取运单信息失败');
-      const data = await res.json();
-      setWaybill(data);
-      // If status is 配送中, check route state or assume not arrived yet
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '加载失败');
-    } finally {
-      setLoading(false);
+  const loadData = async () => {
+    const r = await fetch(`/api/batches/${id}`);
+    const d = await r.json();
+    const rd = d.data || d;
+    if (rd) {
+      setBatch(rd.batch || rd);
+      const wbs = rd.waybills || [];
+      setWaybills(wbs);
+      setBatchStarted((rd.batch || rd).status >= 1);
+
+      // Init steps from current state
+      const s: Record<number, StepState> = {};
+      wbs.forEach((w: any) => {
+        s[w.id] = {
+          arrived: w.status === 3 || w.status >= 2,
+          completed: w.status === 3,
+          loading: false,
+        };
+      });
+      setSteps(s);
     }
-  }, [id]);
-
-  useEffect(() => {
-    fetchWaybill();
-  }, [fetchWaybill]);
-
-  const handleArrived = () => {
-    setArrived(true);
+    setLoading(false);
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-gray-200 border-t-[#07C160] rounded-full animate-spin" />
-          <p className="text-gray-500 text-base">加载中...</p>
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => { loadData(); }, [id]);
 
-  if (error || !waybill) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] px-6">
-        <div className="text-5xl mb-4">😢</div>
-        <p className="text-gray-600 text-lg mb-4 text-center">{error || '运单不存在'}</p>
-        <button
-          onClick={fetchWaybill}
-          className="px-8 py-3 bg-[#07C160] text-white text-lg rounded-xl font-medium"
-        >
-          重试
-        </button>
-      </div>
-    );
-  }
-
-  const tempInfo = TEMPERATURE_MAP[waybill.temperatureType] || {
-    label: waybill.temperatureType,
-    color: '#666',
-    bgColor: '#F0F0F0',
+  const startBatch = async () => {
+    await fetch(`/api/batches/${id}/start`, { method: 'POST' });
+    setBatchStarted(true);
+    await loadData();
   };
-  const statusInfo = STATUS_MAP[waybill.status] || { label: '未知', color: '#999' };
 
-  const infoRows = [
-    { label: '货主', value: waybill.shipperName },
-    {
-      label: '温层',
-      value: (
-        <span
-          className="inline-flex px-2 py-0.5 rounded text-xs font-medium"
-          style={{ backgroundColor: tempInfo.bgColor, color: tempInfo.color }}
-        >
-          {tempInfo.label}
-        </span>
-      ),
-    },
-    { label: '物品类型', value: waybill.goodsType },
-    { label: '件数', value: `${waybill.packageCount} 件` },
-    { label: '重量', value: `${waybill.weight} kg` },
-    ...(waybill.codAmount && waybill.codAmount > 0
-      ? [{ label: '代收金额', value: `¥${waybill.codAmount.toFixed(2)}` }]
-      : []),
-    ...(waybill.signRequirement
-      ? [{ label: '签收要求', value: waybill.signRequirement }]
-      : []),
-    ...(waybill.remark ? [{ label: '备注', value: waybill.remark }] : []),
-  ];
+  const finishBatch = async () => {
+    await fetch(`/api/batches/${id}/finish`, { method: 'POST' });
+    await loadData();
+  };
+
+  const markArrived = async (wbId: number) => {
+    setSteps(prev => ({ ...prev, [wbId]: { ...prev[wbId], loading: true } }));
+    // Simulate arrive - update waybill status to 2
+    await fetch(`/api/waybills/${wbId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 2 }),
+    });
+    setSteps(prev => ({ ...prev, [wbId]: { arrived: true, completed: prev[wbId]?.completed || false, loading: false } }));
+  };
+
+  const markComplete = (wbId: number) => () => {
+    router.push(`/(driver)/sign/${wbId}`);
+  };
+
+  const markException = (wbId: number) => () => {
+    router.push(`/(driver)/sign/${wbId}?mode=exception`);
+  };
+
+  const navToAddress = (wb: any) => {
+    if (wb.receiverLat && wb.receiverLng) {
+      window.open(`https://uri.amap.com/navigation?to=${wb.receiverLng},${wb.receiverLat},${encodeURIComponent(wb.receiverName)}&mode=car&callnative=1`, '_blank');
+    } else {
+      window.open(`https://uri.amap.com/navigation?to=0,0,${encodeURIComponent(wb.receiverAddress)}&mode=car&callnative=1`, '_blank');
+    }
+  };
+
+  if (loading) return <div className="flex items-center justify-center min-h-screen"><p className="text-gray-500">加载中...</p></div>;
+  if (!batch) return <div className="flex items-center justify-center min-h-screen"><p className="text-red-500">批次不存在</p></div>;
+
+  const done = waybills.filter((w: any) => w.status === 3).length;
+  const allDone = done === waybills.length && waybills.length > 0;
+  const currentWb = waybills[currentTab];
+  const shareUrl = `${window.location.origin}/share/${batch.id}`;
+  const printUrl = `${window.location.origin}/print/${batch.id}`;
 
   return (
-    <div className="pb-6">
-      {/* 运单号 + 状态 */}
-      <div className="bg-white mx-4 mt-4 rounded-xl shadow-sm p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs text-gray-400 mb-1">运单号</p>
-            <p className="text-lg font-bold text-gray-900">{waybill.waybillNo}</p>
+    <div className="min-h-screen bg-gray-50 pb-24">
+      {/* Top Bar */}
+      <div className="bg-green-600 text-white px-4 py-3 sticky top-0 z-30 shadow-md">
+        <div className="flex items-center gap-2">
+          <button onClick={() => router.push('/(driver)/tasks')} className="text-white text-xl">←</button>
+          <div className="flex-1">
+            <div className="font-bold">{batch.batchNo}</div>
+            <div className="text-xs opacity-80">{batch.driverName} · {batch.plateNo}</div>
           </div>
-          <span
-            className="px-3 py-1.5 rounded-full text-sm font-medium"
-            style={{
-              backgroundColor: statusInfo.color + '18',
-              color: statusInfo.color,
-            }}
-          >
-            {statusInfo.label}
-          </span>
+          <div className="text-right text-sm">
+            <div className="font-bold">{done}/{waybills.length}</div>
+            <div className="opacity-80">已送达</div>
+          </div>
+        </div>
+        {/* Progress bar */}
+        <div className="mt-2 h-2 bg-white/20 rounded-full overflow-hidden">
+          <div className="h-full bg-white rounded-full transition-all" style={{ width: waybills.length ? `${Math.round((done / waybills.length) * 100)}%` : '0%' }} />
         </div>
       </div>
 
-      {/* 收件人信息 */}
-      <div className="bg-white mx-4 mt-3 rounded-xl shadow-sm p-4">
-        <p className="text-xs text-gray-400 mb-3">收件人信息</p>
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-xl font-bold text-gray-900">{waybill.receiverName}</span>
-          <a
-            href={`tel:${waybill.receiverPhone}`}
-            className="flex items-center gap-1 text-[#1677FF] text-base underline"
-          >
-            📞 {waybill.receiverPhone}
-          </a>
-        </div>
-        <p className="text-sm text-gray-600 leading-relaxed">{waybill.receiverAddress}</p>
-      </div>
-
-      {/* 导航按钮 */}
-      <div className="mx-4 mt-3">
-        <button
-          onClick={() => {
-            if (waybill.receiverLng && waybill.receiverLat) {
-              window.open(
-                `https://uri.amap.com/navigation?to=${waybill.receiverLng},${waybill.receiverLat}&mode=car`,
-                '_blank',
-              );
-            } else {
-              window.open(
-                `https://uri.amap.com/navigation?to=${encodeURIComponent(waybill.receiverAddress)}&mode=car`,
-                '_blank',
-              );
-            }
-          }}
-          className="w-full h-14 rounded-xl bg-[#1677FF] text-white text-lg font-bold flex items-center justify-center gap-2 active:bg-blue-700"
-        >
-          <svg
-            className="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-            />
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-            />
-          </svg>
-          导航
-        </button>
-      </div>
-
-      {/* 货物信息 */}
-      <div className="bg-white mx-4 mt-3 rounded-xl shadow-sm p-4">
-        <p className="text-xs text-gray-400 mb-3">货物信息</p>
-        <div className="space-y-2.5">
-          {infoRows.map((row, idx) => (
-            <div key={idx} className="flex items-center">
-              <span className="w-20 text-sm text-gray-500 flex-shrink-0">{row.label}</span>
-              <span className="text-sm font-medium text-gray-900">{row.value}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 签收记录 */}
-      {waybill.status === 3 && waybill.signRecord && (
-        <div className="bg-white mx-4 mt-3 rounded-xl shadow-sm p-4">
-          <p className="text-xs text-gray-400 mb-3">签收记录</p>
-          <div className="space-y-2">
-            <div className="flex items-center">
-              <span className="w-20 text-sm text-gray-500">签收方式</span>
-              <span className="text-sm font-medium text-gray-900">
-                {waybill.signRecord.type === 'signature'
-                  ? '电子签名'
-                  : waybill.signRecord.type === 'photo'
-                    ? '拍照签收'
-                    : waybill.signRecord.type === 'proxy'
-                      ? `代收签收 (${waybill.signRecord.proxyRelation})`
-                      : waybill.signRecord.type}
-              </span>
-            </div>
-            <div className="flex items-center">
-              <span className="w-20 text-sm text-gray-500">签收时间</span>
-              <span className="text-sm font-medium text-gray-900">
-                {formatDateTime(waybill.signRecord.signTime)}
-              </span>
-            </div>
-            {waybill.signRecord.proxyName && (
-              <div className="flex items-center">
-                <span className="w-20 text-sm text-gray-500">代收人</span>
-                <span className="text-sm font-medium text-gray-900">
-                  {waybill.signRecord.proxyName}
-                </span>
-              </div>
-            )}
-            {waybill.signRecord.signature && (
-              <div className="mt-2">
-                <p className="text-xs text-gray-400 mb-1">签名</p>
-                <img
-                  src={waybill.signRecord.signature}
-                  alt="签名"
-                  className="max-w-[200px] border border-gray-200 rounded-lg"
-                />
-              </div>
-            )}
-            {waybill.signRecord.photos && waybill.signRecord.photos.length > 0 && (
-              <div className="mt-2">
-                <p className="text-xs text-gray-400 mb-1">签收照片</p>
-                <div className="flex gap-2 flex-wrap">
-                  {waybill.signRecord.photos.map((photo, i) => (
-                    <img
-                      key={i}
-                      src={photo}
-                      alt={`签收照片 ${i + 1}`}
-                      className="w-20 h-20 object-cover rounded-lg border border-gray-200"
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+      {/* Tab navigation - one tab per stop */}
+      {waybills.length > 1 && (
+        <div className="bg-white px-2 py-2 sticky top-[88px] z-20 shadow-sm overflow-x-auto">
+          <div className="flex gap-1">
+            {waybills.map((wb: any, i: number) => (
+              <button
+                key={wb.id}
+                onClick={() => setCurrentTab(i)}
+                className={`shrink-0 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+                  currentTab === i
+                    ? 'bg-green-600 text-white shadow'
+                    : wb.status === 3
+                      ? 'bg-green-50 text-green-600'
+                      : wb.status === 4
+                        ? 'bg-red-50 text-red-600'
+                        : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                {wb.status === 3 ? '✓' : wb.status === 4 ? '✕' : ''}
+                第{i + 1}站
+              </button>
+            ))}
           </div>
         </div>
       )}
 
-      {/* 异常记录 */}
-      {waybill.status === 4 && waybill.exceptionRecord && (
-        <div className="bg-white mx-4 mt-3 rounded-xl shadow-sm p-4">
-          <p className="text-xs text-gray-400 mb-3">异常记录</p>
-          <div className="space-y-2">
-            <div className="flex items-center">
-              <span className="w-20 text-sm text-gray-500">异常类型</span>
-              <span className="text-sm font-medium text-red-500">
-                {waybill.exceptionRecord.type}
-              </span>
+      {/* Current Stop Detail */}
+      {currentWb && (
+        <div className="p-4 max-w-lg mx-auto">
+          {/* Stop card */}
+          <div className={`bg-white rounded-2xl shadow-lg overflow-hidden border-t-4 ${
+            currentWb.status === 3 ? 'border-green-500' : currentWb.status === 4 ? 'border-red-500' : 'border-green-600'
+          }`}>
+            {/* Stop number */}
+            <div className="bg-gray-50 px-5 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg ${
+                  currentWb.status === 3 ? 'bg-green-500' : currentWb.status === 4 ? 'bg-red-500' : 'bg-green-600'
+                }`}>
+                  {currentTab + 1}
+                </div>
+                <div>
+                  <div className="font-bold text-lg">{currentWb.receiverName}</div>
+                  <div className="text-xs text-gray-500">
+                    {currentWb.status === 3 ? '✅ 已送达' : currentWb.status === 4 ? '❌ 异常' :
+                     steps[currentWb.id]?.arrived ? '📍 已到达 · 待签收' : '📍 待前往'}
+                  </div>
+                </div>
+              </div>
+              <span className="px-2 py-1 bg-gray-100 rounded text-xs">{currentWb.temperatureLayer}</span>
             </div>
-            <div className="flex items-center">
-              <span className="w-20 text-sm text-gray-500">上报时间</span>
-              <span className="text-sm font-medium text-gray-900">
-                {formatDateTime(waybill.exceptionRecord.createdAt)}
-              </span>
-            </div>
-            <div>
-              <span className="text-sm text-gray-500 block mb-1">异常描述</span>
-              <p className="text-sm text-gray-900">{waybill.exceptionRecord.description}</p>
-            </div>
-            {waybill.exceptionRecord.photos &&
-              waybill.exceptionRecord.photos.length > 0 && (
-                <div className="mt-2">
-                  <p className="text-xs text-gray-400 mb-1">异常照片</p>
-                  <div className="flex gap-2 flex-wrap">
-                    {waybill.exceptionRecord.photos.map((photo, i) => (
-                      <img
-                        key={i}
-                        src={photo}
-                        alt={`异常照片 ${i + 1}`}
-                        className="w-20 h-20 object-cover rounded-lg border border-gray-200"
-                      />
-                    ))}
+
+            <div className="p-5 space-y-4">
+              {/* Contact */}
+              <div className="flex gap-3">
+                <a href={`tel:${currentWb.receiverPhone}`}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-green-50 text-green-700 rounded-xl font-bold hover:bg-green-100 transition-colors">
+                  📞 {currentWb.receiverPhone}
+                </a>
+                <button onClick={() => navToAddress(currentWb)}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-50 text-blue-700 rounded-xl font-bold hover:bg-blue-100 transition-colors">
+                  🧭 导航
+                </button>
+              </div>
+
+              {/* Address */}
+              <div className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
+                <span className="text-gray-400">📍 </span>{currentWb.receiverAddress}
+              </div>
+
+              {/* Cargo info */}
+              <div className="flex flex-wrap gap-2 text-sm">
+                <span className="bg-gray-100 px-3 py-1 rounded-lg">{currentWb.packageCount}件</span>
+                <span className="bg-gray-100 px-3 py-1 rounded-lg">{currentWb.weight}kg</span>
+                {currentWb.itemType && <span className="bg-gray-100 px-3 py-1 rounded-lg">{currentWb.itemType}</span>}
+                {currentWb.shipper?.name && <span className="bg-gray-100 px-3 py-1 rounded-lg">货主: {currentWb.shipper.name}</span>}
+              </div>
+
+              {/* Sign info if completed */}
+              {currentWb.status === 3 && (
+                <div className="bg-green-50 rounded-lg p-3">
+                  <div className="text-sm text-green-700 font-bold">✅ 已签收</div>
+                  <div className="text-xs text-green-600 mt-1">
+                    {currentWb.signType === 'photo' ? '📷 拍照签收' : '✍️ 签名签收'}
+                    {currentWb.signerName ? ` · ${currentWb.signerName}` : ''}
+                    {currentWb.signTime ? ` · ${new Date(currentWb.signTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : ''}
                   </div>
                 </div>
               )}
+
+              {currentWb.status === 4 && (
+                <div className="bg-red-50 rounded-lg p-3">
+                  <div className="text-sm text-red-700 font-bold">❌ 异常</div>
+                  <div className="text-xs text-red-600 mt-1">{currentWb.exceptionType} · {currentWb.exceptionDesc}</div>
+                </div>
+              )}
+
+              {/* Action buttons */}
+              {currentWb.status !== 3 && currentWb.status !== 4 && (
+                <div className="space-y-2 pt-2">
+                  {!batchStarted && (
+                    <button onClick={startBatch}
+                      className="w-full py-4 bg-orange-500 text-white rounded-xl font-bold text-lg hover:bg-orange-600 transition-colors">
+                      🚀 开始配送
+                    </button>
+                  )}
+
+                  {batchStarted && !steps[currentWb.id]?.arrived && (
+                    <button onClick={() => markArrived(currentWb.id)}
+                      disabled={steps[currentWb.id]?.loading}
+                      className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold text-lg hover:bg-blue-700 transition-colors">
+                      {steps[currentWb.id]?.loading ? '处理中...' : '📍 到达此站'}
+                    </button>
+                  )}
+
+                  {batchStarted && steps[currentWb.id]?.arrived && (
+                    <div className="flex gap-3">
+                      <button onClick={markComplete(currentWb.id)}
+                        className="flex-1 py-4 bg-green-600 text-white rounded-xl font-bold text-lg hover:bg-green-700 transition-colors">
+                        ✅ 完成送货
+                      </button>
+                      <button onClick={markException(currentWb.id)}
+                        className="flex-1 py-4 border-2 border-red-500 text-red-500 rounded-xl font-bold text-lg hover:bg-red-50 transition-colors">
+                        ❌ 异常
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* All stops summary */}
+          <div className="mt-6">
+            <h3 className="font-bold text-gray-800 mb-3">配送进度</h3>
+            <div className="space-y-2">
+              {waybills.map((wb: any, i: number) => (
+                <button
+                  key={wb.id}
+                  onClick={() => setCurrentTab(i)}
+                  className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-all ${
+                    currentTab === i ? 'bg-green-50 border-2 border-green-600' :
+                    wb.status === 3 ? 'bg-gray-50 opacity-60' : 'bg-white shadow-sm'
+                  }`}
+                >
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0 ${
+                    wb.status === 3 ? 'bg-green-500' : wb.status === 4 ? 'bg-red-500' : 'bg-gray-400'
+                  }`}>
+                    {wb.status === 3 ? '✓' : wb.status === 4 ? '✕' : i + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm">{wb.receiverName}</div>
+                    <div className="text-xs text-gray-500 truncate">{wb.receiverAddress}</div>
+                  </div>
+                  <span className="text-xs text-gray-400">
+                    {wb.status === 3 ? '已签收' : wb.status === 4 ? '异常' : '待配送'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* All done */}
+          {allDone && waybills.length > 0 && (
+            <div className="mt-6 space-y-3">
+              <div className="bg-green-50 rounded-2xl p-6 text-center">
+                <div className="text-5xl mb-3">🎉</div>
+                <div className="text-xl font-bold text-green-700">全部配送完成！</div>
+                <div className="text-sm text-green-600 mt-1">共 {waybills.length} 站，已全部送达</div>
+              </div>
+              <button onClick={finishBatch}
+                className="w-full py-4 bg-green-600 text-white rounded-xl font-bold text-lg hover:bg-green-700 transition-colors">
+                ✅ 确认完成全部配送
+              </button>
+            </div>
+          )}
+
+          {/* Tools */}
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <a href={printUrl} target="_blank"
+              className="flex items-center justify-center gap-2 py-3 bg-white rounded-xl shadow text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors">
+              🖨️ 打印派送单
+            </a>
+            <button onClick={() => { navigator.clipboard.writeText(shareUrl); alert('已复制分享链接！'); }}
+              className="flex items-center justify-center gap-2 py-3 bg-white rounded-xl shadow text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors">
+              📋 复制分享链接
+            </button>
           </div>
         </div>
       )}
-
-      {/* 底部操作按钮 */}
-      <div className="mx-4 mt-6 space-y-3">
-        {waybill.status === 2 && !arrived && (
-          <button
-            onClick={handleArrived}
-            className="w-full h-14 rounded-xl bg-[#1677FF] text-white text-lg font-bold active:bg-blue-700"
-          >
-            到达
-          </button>
-        )}
-
-        {waybill.status === 2 && arrived && (
-          <>
-            <button
-              onClick={() => router.push(`/sign/${waybill.id}`)}
-              className="w-full h-14 rounded-xl bg-[#07C160] text-white text-lg font-bold active:bg-green-600"
-            >
-              正常签收
-            </button>
-            <button
-              onClick={() => router.push(`/sign/${waybill.id}?mode=exception`)}
-              className="w-full h-14 rounded-xl bg-[#F5222D] text-white text-lg font-bold active:bg-red-700"
-            >
-              异常上报
-            </button>
-          </>
-        )}
-      </div>
-
-      <div className="h-6" />
     </div>
   );
 }
