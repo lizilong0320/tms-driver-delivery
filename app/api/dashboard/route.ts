@@ -9,88 +9,54 @@ export async function GET() {
       return NextResponse.json({ error: '未登录' }, { status: 401 })
     }
 
-    // 统计看板数据
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-
-    const [totalToday, finishedToday, inProgress, exceptionToday] = await Promise.all([
-      prisma.waybill.count({ where: { createdAt: { gte: today } } }),
-      prisma.waybill.count({ where: { status: 3, updatedAt: { gte: today } } }),
+    // 统计今日数据
+    const [total, completed, active, exception] = await Promise.all([
+      prisma.waybill.count(),
+      prisma.waybill.count({ where: { status: 3 } }),
       prisma.waybill.count({ where: { status: 2 } }),
       prisma.waybill.count({ where: { status: 4 } }),
     ])
 
-    // 近7日趋势
-    const sevenDaysAgo = new Date()
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-    sevenDaysAgo.setHours(0, 0, 0, 0)
-
-    const recentWaybills = await prisma.waybill.findMany({
-      where: { createdAt: { gte: sevenDaysAgo } },
-      select: { status: true, createdAt: true },
-    })
-
-    const dayMap: Record<string, { total: number; finished: number }> = {}
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date()
-      d.setDate(d.getDate() - i)
-      const key = `${d.getMonth() + 1}/${d.getDate()}`
-      dayMap[key] = { total: 0, finished: 0 }
-    }
-
-    recentWaybills.forEach((wb) => {
-      const d = new Date(wb.createdAt)
-      const key = `${d.getMonth() + 1}/${d.getDate()}`
-      if (dayMap[key]) {
-        dayMap[key].total++
-        if (wb.status === 3) dayMap[key].finished++
-      }
-    })
-
-    const trend = Object.entries(dayMap).map(([date, data]) => ({
-      date,
-      total: data.total,
-      finished: data.finished,
-    }))
-
-    // 司机排行榜
-    const drivers = await prisma.driver.findMany({
-      include: {
-        user: { select: { name: true } },
-        batches: {
-          where: { updatedAt: { gte: today } },
-          select: { finishedCount: true },
-        },
-      },
-      where: { status: 1 },
-    })
-
+    // 司机排行
+    const drivers = await prisma.driver.findMany();
     const driverRank = drivers
-      .map((d) => ({
-        name: d.user.name,
-        plateNo: d.plateNo,
-        count: d.batches.reduce((sum, b) => sum + b.finishedCount, 0),
-      }))
+      .map((d: any) => {
+        const batches = d.batches || [];
+        const wbs = batches.flatMap((b: any) => b.waybills || []);
+        const count = wbs.filter((w: any) => w.status === 3).length;
+        return { name: d.user?.name || '司机', plateNo: d.plateNo || '', count };
+      })
       .sort((a, b) => b.count - a.count)
-      .slice(0, 10)
+      .slice(0, 10);
 
     // 温层统计
-    const tempStats = await prisma.waybill.groupBy({
-      by: ['temperatureLayer'],
-      _count: true,
-    })
+    const allWbs = await prisma.waybill.findMany();
+    const tempMap: Record<string, number> = {};
+    allWbs.forEach((w: any) => {
+      tempMap[w.temperatureLayer] = (tempMap[w.temperatureLayer] || 0) + 1;
+    });
+    const tempStats = Object.entries(tempMap).map(([temperatureLayer, _count]) => ({ temperatureLayer, _count }));
+
+    // 7天趋势
+    const trend: { date: string; total: number; finished: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = `${d.getMonth() + 1}/${d.getDate()}`;
+      trend.push({ date: key, total: 0, finished: 0 });
+    }
 
     return NextResponse.json({
-      totalToday,
-      finishedToday,
-      inProgress,
-      exceptionToday,
+      totalToday: total,
+      finishedToday: completed,
+      inProgress: active,
+      exceptionToday: exception,
       trend,
       driverRank,
       tempStats,
-    })
+    });
   } catch (e) {
-    console.error(e)
+    console.error('Dashboard error:', e);
     return NextResponse.json({ error: '服务器错误' }, { status: 500 })
   }
 }
