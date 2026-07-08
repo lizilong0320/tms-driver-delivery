@@ -474,7 +474,7 @@ export default function WaybillsPage() {
                         return (
                           <tr key={wb.id} className="border-b last:border-0 hover:bg-muted/50">
                             <td className="py-2.5 font-mono text-sm">{wb.waybillNo}</td>
-                            <td className="py-2.5">{wb.shipper?.name || wb.shipperName || '-'}</td>
+                            <td className="py-2.5">{wb.shipper?.name || (wb as any).shipperName || '-'}</td>
                             <td className="py-2.5">{wb.receiverName}</td>
                             <td className="py-2.5 max-w-[140px] truncate" title={wb.receiverAddress}>
                               {wb.receiverAddress}
