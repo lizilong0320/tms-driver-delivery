@@ -46,6 +46,8 @@ interface Shipper {
 interface Warehouse {
   id: number;
   name: string;
+  address?: string;
+  city?: string;
 }
 
 export default function WaybillsPage() {
@@ -68,6 +70,7 @@ export default function WaybillsPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const [form, setForm] = useState({
+    waybillNo: '',
     warehouseId: '',
     shipperId: '',
     receiverName: '',
@@ -79,6 +82,8 @@ export default function WaybillsPage() {
     packageCount: '',
     remark: '',
   });
+
+  const selectedWarehouse = warehouses.find((w) => String(w.id) === form.warehouseId);
 
   const fetchWaybills = useCallback(() => {
     setLoading(true);
@@ -119,6 +124,7 @@ export default function WaybillsPage() {
 
   const resetForm = () => {
     setForm({
+      waybillNo: '',
       warehouseId: '',
       shipperId: '',
       receiverName: '',
@@ -135,16 +141,21 @@ export default function WaybillsPage() {
   const handleCreate = async () => {
     setSubmitting(true);
     try {
+      // If user typed a custom waybillNo, use it; otherwise let server generate
+      const payload: any = {
+        ...form,
+        warehouseId: Number(form.warehouseId),
+        shipperId: Number(form.shipperId),
+        weight: Number(form.weight),
+        packageCount: Number(form.packageCount),
+        pickupAddress: selectedWarehouse?.address || '',
+      };
+      if (!payload.waybillNo) delete payload.waybillNo;
+
       const res = await fetch('/api/waybills', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          warehouseId: Number(form.warehouseId),
-          shipperId: Number(form.shipperId),
-          weight: Number(form.weight),
-          packageCount: Number(form.packageCount),
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error('创建失败');
       setDialogOpen(false);
@@ -209,13 +220,21 @@ export default function WaybillsPage() {
             <DialogTrigger asChild>
               <Button onClick={() => { resetForm(); }}>新增运单</Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+            <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>新增运单</DialogTitle>
               </DialogHeader>
               <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2 space-y-1">
+                  <Label>运单号（不填自动生成）</Label>
+                  <Input
+                    value={form.waybillNo}
+                    onChange={(e) => setForm({ ...form, waybillNo: e.target.value })}
+                    placeholder="如 ZT20260708001，留空则自动生成"
+                  />
+                </div>
                 <div className="space-y-1">
-                  <Label>仓库</Label>
+                  <Label>仓库 *</Label>
                   <Select
                     value={form.warehouseId}
                     onValueChange={(v) => setForm({ ...form, warehouseId: v })}
@@ -233,7 +252,16 @@ export default function WaybillsPage() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label>货主</Label>
+                  <Label>提货地址（自动从仓库带入）</Label>
+                  <Input
+                    value={selectedWarehouse?.address || ''}
+                    readOnly
+                    placeholder="选择仓库后自动带入"
+                    className="bg-gray-50"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>货主 *</Label>
                   <Select
                     value={form.shipperId}
                     onValueChange={(v) => setForm({ ...form, shipperId: v })}
@@ -251,7 +279,7 @@ export default function WaybillsPage() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label>收件人</Label>
+                  <Label>收件人 *</Label>
                   <Input
                     value={form.receiverName}
                     onChange={(e) =>
@@ -261,7 +289,7 @@ export default function WaybillsPage() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label>收件人电话</Label>
+                  <Label>收件人电话 *</Label>
                   <Input
                     value={form.receiverPhone}
                     onChange={(e) =>
@@ -271,17 +299,17 @@ export default function WaybillsPage() {
                   />
                 </div>
                 <div className="col-span-2 space-y-1">
-                  <Label>收件地址</Label>
+                  <Label>送货地址 *</Label>
                   <Input
                     value={form.receiverAddress}
                     onChange={(e) =>
                       setForm({ ...form, receiverAddress: e.target.value })
                     }
-                    placeholder="详细地址"
+                    placeholder="详细送货地址"
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label>温层</Label>
+                  <Label>温层 *</Label>
                   <Select
                     value={form.temperatureLayer}
                     onValueChange={(v) =>
@@ -446,7 +474,7 @@ export default function WaybillsPage() {
                         return (
                           <tr key={wb.id} className="border-b last:border-0 hover:bg-muted/50">
                             <td className="py-2.5 font-mono text-sm">{wb.waybillNo}</td>
-                            <td className="py-2.5">{wb.shipper?.name || '-'}</td>
+                            <td className="py-2.5">{wb.shipper?.name || wb.shipperName || '-'}</td>
                             <td className="py-2.5">{wb.receiverName}</td>
                             <td className="py-2.5 max-w-[140px] truncate" title={wb.receiverAddress}>
                               {wb.receiverAddress}

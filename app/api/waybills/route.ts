@@ -56,10 +56,10 @@ export async function POST(request: NextRequest) {
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
 
     const data = await request.json()
-    const waybillNo = generateWaybillNo()
+    const waybillNo = (data.waybillNo && String(data.waybillNo).trim()) || generateWaybillNo()
 
     const waybill = await prisma.waybill.create({
-      data: { ...data, waybillNo },
+      data: { ...data, waybillNo, status: data.status ?? 0 },
       include: { warehouse: true, shipper: true },
     })
 

@@ -147,8 +147,21 @@ export const prisma = {
       let list = [...db.drivers];
       const where = args?.where || {};
       if (where.status !== undefined) list = list.filter((d: any) => d.status === where.status);
+      list.sort((a: any, b: any) => b.id - a.id);
       if (args?.include) list.forEach((d: any) => resolveIncludes(d, args.include));
       return list;
+    },
+    findFirst: (args?: any) => {
+      const list = db.drivers;
+      if (args?.where) {
+        return list.find((d: any) => {
+          for (const k of Object.keys(args.where)) {
+            if (d[k] !== args.where[k]) return false;
+          }
+          return true;
+        }) || null;
+      }
+      return list[0] || null;
     },
     update: (args: any) => {
       const d = db.drivers.find((d: any) => d.id === args.where.id);

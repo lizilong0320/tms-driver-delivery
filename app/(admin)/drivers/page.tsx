@@ -46,6 +46,7 @@ export default function DriversPage() {
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
   const [editForm, setEditForm] = useState({
     name: '',
+    phone: '',
     plateNo: '',
     vehicleType: '',
   });
@@ -100,6 +101,7 @@ export default function DriversPage() {
     setEditingDriver(driver);
     setEditForm({
       name: driver.name,
+      phone: driver.phone,
       plateNo: driver.plateNo || '',
       vehicleType: driver.vehicleType || '',
     });
@@ -215,6 +217,16 @@ export default function DriversPage() {
                   setEditForm({ ...editForm, name: e.target.value })
                 }
                 placeholder="司机姓名"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>手机号</Label>
+              <Input
+                value={editForm.phone}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, phone: e.target.value })
+                }
+                placeholder="手机号"
               />
             </div>
             <div className="space-y-1">

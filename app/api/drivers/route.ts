@@ -19,12 +19,15 @@ export async function GET(request: NextRequest) {
       orderBy: { id: 'desc' },
     })
 
-    // Flatten: add name/phone from user relation
-    const flat = drivers.map((d: any) => ({
-      ...d,
-      name: d.user?.name || '未知',
-      phone: d.user?.phone || '',
-    }))
+    // Flatten: add name/phone from user relation (in-memory store has no include, look up directly)
+    const flat = drivers.map((d: any) => {
+      const user = (globalThis as any).__tms_db?.users?.find((u: any) => u.id === d.userId);
+      return {
+        ...d,
+        name: user?.name || '未知',
+        phone: user?.phone || '',
+      };
+    })
 
     return NextResponse.json(flat)
   } catch (e) {
