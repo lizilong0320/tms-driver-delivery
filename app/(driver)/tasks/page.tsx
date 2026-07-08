@@ -51,15 +51,17 @@ export default function TasksPage() {
       if (!batchesRes.ok) throw new Error('获取任务列表失败');
       const data = await batchesRes.json();
 
-      const batchList: Batch[] = data.batches || data || [];
+      const batchList: Batch[] = data.list || data.batches || (Array.isArray(data) ? data : []);
 
       let total = 0;
       let completed = 0;
       batchList.forEach((b) => {
-        b.waybills?.forEach((w: Waybill) => {
-          total++;
-          if (w.status === 3) completed++;
-        });
+        if (Array.isArray(b.waybills)) {
+          b.waybills.forEach((w: Waybill) => {
+            total++;
+            if (w.status === 3) completed++;
+          });
+        }
       });
 
       setBatches(batchList);
