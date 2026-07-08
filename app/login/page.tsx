@@ -33,9 +33,9 @@ export default function LoginPage() {
 
       // 跳转
       if (data.user.role === 'admin') {
-        router.push('/dashboard')
+        router.push('/(admin)/dashboard')
       } else {
-        router.push('/tasks')
+        router.push('/(driver)/tasks')
       }
     } catch {
       setError('网络错误')

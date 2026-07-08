@@ -11,7 +11,7 @@ function initDB() {
   return {
     users: [
       { id: 1, phone: 'admin', name: '管理员', password: hash, role: 'admin', status: 1, createdAt: now },
-      { id: 2, phone: '13800138000', name: '张师傅', password: hash, role: 'driver', status: 1, createdAt: now },
+      { id: 2, phone: '13900010001', name: '张师傅', password: hash, role: 'driver', status: 1, createdAt: now },
     ],
     drivers: [
       { id: 1, userId: 1, plateNo: null, vehicleType: null, status: 1, idCard: null },
