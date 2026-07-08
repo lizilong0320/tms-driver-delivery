@@ -33,9 +33,9 @@ export default function LoginPage() {
 
       // 跳转
       if (data.user.role === 'admin') {
-        router.push('/(admin)/dashboard')
+        router.push('/dashboard')
       } else {
-        router.push('/(driver)/tasks')
+        router.push('/tasks')
       }
     } catch {
       setError('网络错误')
@@ -90,7 +90,7 @@ export default function LoginPage() {
           </Button>
 
           <div className="text-center text-sm text-gray-400 mt-4">
-            <p>默认管理员：13800000000 / 123456</p>
+            <p>默认管理员：admin / 123456</p>
             <p>默认司机：13900010001 / 123456</p>
           </div>
         </form>
