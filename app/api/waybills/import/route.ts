@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { prisma, ensureLoaded } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 import { generateWaybillNo } from '@/lib/utils'
 import * as XLSX from 'xlsx'
 
 export async function POST(request: NextRequest) {
-  try {
+  try { await ensureLoaded();
     const session = await getSession()
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
 
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
-      try {
+      try { await ensureLoaded();
         const shipper = row['货主']
           ? await prisma.shipper.upsert({
               where: { name: row['货主'] },

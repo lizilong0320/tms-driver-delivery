@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
-import { prisma } from '@/lib/prisma'
+import { prisma, ensureLoaded } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  try { await ensureLoaded();
     const session = await getSession()
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
 
@@ -27,7 +27,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  try { await ensureLoaded();
     const session = await getSession()
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
 

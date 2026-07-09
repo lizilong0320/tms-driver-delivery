@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { prisma, ensureLoaded } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 
 export async function GET() {
-  try {
+  try { await ensureLoaded();
     const session = await getSession()
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
     const warehouses = await prisma.warehouse.findMany({ orderBy: { id: 'desc' } })
@@ -14,7 +14,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  try {
+  try { await ensureLoaded();
     const session = await getSession()
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
     const data = await request.json()

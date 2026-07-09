@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { prisma, ensureLoaded } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 
 export async function POST(
   request: NextRequest,
   { params }: { params: { waybillId: string } }
 ) {
-  try {
+  try { await ensureLoaded();
     const session = await getSession()
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
 

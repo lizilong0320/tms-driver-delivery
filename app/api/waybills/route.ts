@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { prisma, ensureLoaded } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 import { generateWaybillNo } from '@/lib/utils'
 
 export async function GET(request: NextRequest) {
-  try {
+  try { await ensureLoaded();
     const session = await getSession()
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
 
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  try {
+  try { await ensureLoaded();
     const session = await getSession()
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
 

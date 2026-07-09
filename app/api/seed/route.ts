@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { prisma, ensureLoaded } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 
 export async function POST() {
-  try {
+  try { await ensureLoaded();
     const pwd = await bcrypt.hash('123456', 10)
     const results: string[] = []
 

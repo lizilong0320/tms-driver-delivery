@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { prisma, ensureLoaded } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 
 export async function GET() {
-  try {
+  try { await ensureLoaded();
     // 检查是否已有管理员
     const admin = await prisma.user.findFirst({ where: { role: 'admin' } })
     if (admin) {

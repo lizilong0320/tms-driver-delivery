@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
-import { prisma } from '@/lib/prisma'
+import { prisma, ensureLoaded } from '@/lib/prisma'
 import { createToken, setSession } from '@/lib/auth'
 
 export async function POST(request: Request) {
-  try {
+  try { await ensureLoaded();
     const { phone, password } = await request.json()
 
     const user = await prisma.user.findUnique({ where: { phone } })
