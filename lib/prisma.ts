@@ -1,22 +1,29 @@
-// In-memory store with GitHub Gist persistence (free, public Gist API)
-// Falls back to /tmp file when no token configured
+// PostgreSQL-backed prisma-compatible store for Vercel + Neon
 import bcrypt from 'bcryptjs';
-import { promises as fs } from 'fs';
+import postgres from 'postgres';
 
-declare global { var __tms_db: any; }
-declare global { var __tms_db_loaded: boolean; }
+declare global { var __tms_db: any; var __tms_sql: any; var __tms_db_loaded: boolean; }
 
-// GitHub Gist config (free, requires just a Personal Access Token)
-const GIST_TOKEN = process.env.TMS_GIST_TOKEN || '';
-const GIST_ID = process.env.TMS_GIST_ID || ''; // Existing Gist ID for the DB
-const GIST_FILE_NAME = 'tms-db.json';
-const REMOTE_ENABLED = !!GIST_TOKEN && !!GIST_ID;
-const TMP_DB_PATH = process.env.TMS_TMP_DB || '/tmp/tms-db.json';
+const POSTGRES_URL = process.env.POSTGRES_URL || process.env.DATABASE_URL || '';
+const USE_POSTGRES = !!POSTGRES_URL;
+
+// Get or create postgres connection (cached on globalThis for warm start perf)
+function getSql() {
+  if (!USE_POSTGRES) return null;
+  if (globalThis.__tms_sql) return globalThis.__tms_sql;
+  try {
+    const sql = postgres(POSTGRES_URL, { max: 5, idle_timeout: 30, prepare: false, transform: { undefined: null } });
+    globalThis.__tms_sql = sql;
+    return sql;
+  } catch (e) {
+    console.error('Postgres connection failed:', e);
+    return null;
+  }
+}
 
 let db = globalThis.__tms_db;
 let dbLoaded = globalThis.__tms_db_loaded;
 
-// Initialize default data (offline fallback)
 function initDB() {
   const hash = bcrypt.hashSync('123456', 10);
   const now = new Date().toISOString();
@@ -29,6 +36,7 @@ function initDB() {
     drivers: [
       { id: 1, userId: 1, plateNo: null, vehicleType: null, status: 1, idCard: null },
       { id: 2, userId: 2, plateNo: '沪A12345', vehicleType: '4.2米冷藏车', status: 1, idCard: null },
+      { id: 3, userId: 3, plateNo: '沪B67890', vehicleType: '3.8米冷藏车', status: 1, idCard: null },
     ],
     shippers: [
       { id: 1, name: '蒙牛乳业', contact: null, phone: '400-123-4567', address: null, createdAt: now },
@@ -39,14 +47,14 @@ function initDB() {
       { id: 2, name: '长沙星沙仓', address: '长沙市星沙经济开发区', city: '长沙', createdAt: now },
     ],
     waybills: [
-      { id: 1, waybillNo: 'WB001', warehouseId: 1, shipperId: 1, receiverName: '张三商超', receiverPhone: '13900139001', receiverAddress: '雨花区韶山南路1号', receiverLng: 113.038, receiverLat: 28.137, temperatureLayer: '冷藏', weight: 50, itemType: '乳制品', packageCount: 10, deadline: null, codAmount: null, remark: null, status: 0, batchId: null, sortOrder: null, signTime: null, signType: null, signerName: null, signImage: null, signLocation: null, exceptionType: null, exceptionDesc: null, exceptionImages: null, createdAt: now, updatedAt: now },
-      { id: 2, waybillNo: 'WB002', warehouseId: 1, shipperId: 1, receiverName: '李四便利店', receiverPhone: '13900139002', receiverAddress: '雨花区湘府路2号', receiverLng: 113.052, receiverLat: 28.125, temperatureLayer: '冷藏', weight: 30, itemType: '酸奶', packageCount: 6, deadline: null, codAmount: null, remark: null, status: 0, batchId: null, sortOrder: null, signTime: null, signType: null, signerName: null, signImage: null, signLocation: null, exceptionType: null, exceptionDesc: null, exceptionImages: null, createdAt: now, updatedAt: now },
-      { id: 3, waybillNo: 'WB003', warehouseId: 2, shipperId: 2, receiverName: '王五超市', receiverPhone: '13900139003', receiverAddress: '星沙区板仓路3号', receiverLng: 113.075, receiverLat: 28.245, temperatureLayer: '冷冻', weight: 80, itemType: '冷冻肉', packageCount: 15, deadline: null, codAmount: null, remark: null, status: 0, batchId: null, sortOrder: null, signTime: null, signType: null, signerName: null, signImage: null, signLocation: null, exceptionType: null, exceptionDesc: null, exceptionImages: null, createdAt: now, updatedAt: now },
-      { id: 4, waybillNo: 'WB004', warehouseId: 1, shipperId: 2, receiverName: '赵六餐饮', receiverPhone: '13900139004', receiverAddress: '雨花区万家丽路4号', receiverLng: 113.028, receiverLat: 28.152, temperatureLayer: '常温', weight: 20, itemType: '调味品', packageCount: 5, deadline: null, codAmount: null, remark: null, status: 0, batchId: null, sortOrder: null, signTime: null, signType: null, signerName: null, signImage: null, signLocation: null, exceptionType: null, exceptionDesc: null, exceptionImages: null, createdAt: now, updatedAt: now },
-      { id: 5, waybillNo: 'WB005', warehouseId: 1, shipperId: 1, receiverName: '孙七生鲜', receiverPhone: '13900139005', receiverAddress: '雨花区劳动路5号', receiverLng: 113.045, receiverLat: 28.145, temperatureLayer: '冷藏', weight: 45, itemType: '鲜奶', packageCount: 8, deadline: null, codAmount: null, remark: null, status: 0, batchId: null, sortOrder: null, signTime: null, signType: null, signerName: null, signImage: null, signLocation: null, exceptionType: null, exceptionDesc: null, exceptionImages: null, createdAt: now, updatedAt: now },
+      { id: 1, waybillNo: 'WB001', warehouseId: 1, shipperId: 1, receiverName: '张三商超', receiverPhone: '13900139001', receiverAddress: '雨花区韶山南路1号', receiverLng: 113.038, receiverLat: 28.137, temperatureLayer: '冷藏', weight: 50, itemType: '乳制品', packageCount: 10, status: 0, batchId: null, sortOrder: null, signTime: null, signType: null, signerName: null, signImage: null, signLocation: null, exceptionType: null, exceptionDesc: null, exceptionImages: null, createdAt: now, updatedAt: now },
+      { id: 2, waybillNo: 'WB002', warehouseId: 1, shipperId: 1, receiverName: '李四便利店', receiverPhone: '13900139002', receiverAddress: '雨花区湘府路2号', receiverLng: 113.052, receiverLat: 28.125, temperatureLayer: '冷藏', weight: 30, itemType: '酸奶', packageCount: 6, status: 0, batchId: null, sortOrder: null, signTime: null, signType: null, signerName: null, signImage: null, signLocation: null, exceptionType: null, exceptionDesc: null, exceptionImages: null, createdAt: now, updatedAt: now },
+      { id: 3, waybillNo: 'WB003', warehouseId: 2, shipperId: 2, receiverName: '王五超市', receiverPhone: '13900139003', receiverAddress: '星沙区板仓路3号', receiverLng: 113.075, receiverLat: 28.245, temperatureLayer: '冷冻', weight: 80, itemType: '冷冻肉', packageCount: 15, status: 0, batchId: null, sortOrder: null, signTime: null, signType: null, signerName: null, signImage: null, signLocation: null, exceptionType: null, exceptionDesc: null, exceptionImages: null, createdAt: now, updatedAt: now },
+      { id: 4, waybillNo: 'WB004', warehouseId: 1, shipperId: 2, receiverName: '赵六餐饮', receiverPhone: '13900139004', receiverAddress: '雨花区万家丽路4号', receiverLng: 113.028, receiverLat: 28.152, temperatureLayer: '常温', weight: 20, itemType: '调味品', packageCount: 5, status: 0, batchId: null, sortOrder: null, signTime: null, signType: null, signerName: null, signImage: null, signLocation: null, exceptionType: null, exceptionDesc: null, exceptionImages: null, createdAt: now, updatedAt: now },
+      { id: 5, waybillNo: 'WB005', warehouseId: 1, shipperId: 1, receiverName: '孙七生鲜', receiverPhone: '13900139005', receiverAddress: '雨花区劳动路5号', receiverLng: 113.045, receiverLat: 28.145, temperatureLayer: '冷藏', weight: 45, itemType: '鲜奶', packageCount: 8, status: 0, batchId: null, sortOrder: null, signTime: null, signType: null, signerName: null, signImage: null, signLocation: null, exceptionType: null, exceptionDesc: null, exceptionImages: null, createdAt: now, updatedAt: now },
     ],
-    batches: [] as any[],
-    nextId: { user: 3, driver: 3, shipper: 3, warehouse: 3, waybill: 6, batch: 1 },
+    batches: [],
+    nextId: { user: 4, driver: 4, shipper: 3, warehouse: 3, waybill: 6, batch: 1 },
   };
 }
 
@@ -61,97 +69,80 @@ function nextId(table: string) {
   return id;
 }
 
-// ========== Persistence layer ==========
-let saveTimer: any = null;
-
-async function loadFromStorage() {
-  if (dbLoaded) return;
+// ========== Postgres layer ==========
+async function initSchema() {
+  const sql = getSql();
+  if (!sql) return;
   try {
-    let remote: any = null;
-    if (REMOTE_ENABLED) {
-      const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-        headers: { Authorization: `token ${GIST_TOKEN}`, Accept: 'application/vnd.github.v3+json' },
-      });
-      if (res.ok) {
-        const json = await res.json();
-        const file = json.files[GIST_FILE_NAME];
-        if (file && file.content) {
-          remote = JSON.parse(file.content);
-        }
-      } else {
-        console.log('Gist load failed:', res.status);
-      }
-    } else {
-      // Try multiple /tmp paths
-      for (const p of [TMP_DB_PATH, '/tmp/tms-db-fallback.json', '/tmp/tms-db.json']) {
-        try {
-          const txt = await fs.readFile(p, 'utf-8');
-          remote = JSON.parse(txt);
-          console.log(`Loaded from ${p}`);
-          break;
-        } catch {}
+    await sql`CREATE TABLE IF NOT EXISTS tms_kv (key TEXT PRIMARY KEY, value JSONB, updated_at TIMESTAMP DEFAULT NOW())`;
+  } catch (e) {
+    console.error('Init schema error:', e);
+  }
+}
+
+async function loadFromPostgres() {
+  const sql = getSql();
+  if (!sql) return;
+  try {
+    await initSchema();
+    const rows = await sql`SELECT value FROM tms_kv WHERE key = 'tms:db' LIMIT 1`;
+    if (rows.length > 0 && rows[0].value) {
+      const remote = rows[0].value;
+      if (remote.users && remote.waybills) {
+        db = { ...initDB(), ...remote };
+        globalThis.__tms_db = db;
+        console.log('Loaded from Postgres');
+        return;
       }
     }
-    if (remote && remote.users && remote.waybills) {
-      db = { ...initDB(), ...remote };
-      globalThis.__tms_db = db;
-      console.log(`Loaded from ${REMOTE_ENABLED ? 'Gist' : '/tmp'}`);
-    } else {
-      console.log(`No remote DB, using initial data`);
-    }
+    console.log('No Postgres DB, using initial data');
+    // Save initial to postgres
+    await saveToPostgres();
   } catch (e: any) {
-    console.log('Load error:', e?.message);
+    console.error('Postgres load error:', e?.message);
+  }
+}
+
+async function saveToPostgres() {
+  const sql = getSql();
+  if (!sql) return;
+  try {
+    await sql`INSERT INTO tms_kv (key, value, updated_at) VALUES ('tms:db', ${JSON.stringify(db)}::jsonb, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+  } catch (e) {
+    console.error('Postgres save error:', e);
+  }
+}
+
+let saveTimer: any = null;
+function persist() {
+  if (!USE_POSTGRES) return;
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => saveToPostgres(), 100);
+}
+
+export async function ensureLoaded() {
+  if (dbLoaded) return;
+  if (USE_POSTGRES) {
+    await loadFromPostgres();
   }
   dbLoaded = true;
   globalThis.__tms_db_loaded = true;
 }
 
-function saveToStorage() {
-  // Fire-and-forget save (no debounce) for stronger durability
-  (async () => {
-    try {
-      if (REMOTE_ENABLED) {
-        const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-          method: 'PATCH',
-          headers: { Authorization: `token ${GIST_TOKEN}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            files: { [GIST_FILE_NAME]: { content: JSON.stringify(db) } },
-          }),
-        });
-        if (res.ok) console.log('Saved to Gist');
-        else console.log('Gist save failed:', res.status, (await res.text()).substring(0, 200));
-      } else {
-        // Write to /tmp - Vercel keeps /tmp alive during warm Lambda invocations
-        await fs.writeFile(TMP_DB_PATH, JSON.stringify(db), 'utf-8');
-        // Also write to a fallback location
-        await fs.writeFile('/tmp/tms-db-fallback.json', JSON.stringify(db), 'utf-8');
-      }
-    } catch (e) {
-      console.log('Save error:', e);
-    }
-  })();
+export function getDb() { return db; }
+
+// ========== SQL-backed mock prisma ==========
+// All operations on POSTGRES go through SQL; on in-memory stay with current logic
+// To keep the code small, when USE_POSTGRES is true we sync each call
+
+async function syncAll() {
+  await saveToPostgres();
 }
 
-export async function ensureLoaded() {
-  if (!dbLoaded) {
-    await loadFromStorage();
-  }
-}
-
-export function persist() {
-  saveToStorage();
-}
-
-// Export a getter so consumers always get current ref
-export function getDb() {
-  return db;
-}
-
-// Relation resolver - mutates input object in place
 function resolveIncludes(obj: any, include: any): any {
   if (!include || !obj) return obj;
-  if (include.warehouse) obj.warehouse = db.warebills && db.warehouses ? (db.warehouses.find((w: any) => w.id === obj.warehouseId) || null) : null;
-  if (include.shipper) obj.shipper = db.shippers ? (db.shippers.find((s: any) => s.id === obj.shipperId) || null) : null;
+  if (include.warehouse) obj.warehouse = db.warehouses.find((w: any) => w.id === obj.warehouseId) || null;
+  if (include.shipper) obj.shipper = db.shippers.find((s: any) => s.id === obj.shipperId) || null;
   if (include.batch) {
     const batch = db.batches.find((b: any) => b.id === obj.batchId);
     if (batch) {
@@ -174,27 +165,17 @@ function resolveIncludes(obj: any, include: any): any {
   }
   if (include.user) obj.user = db.users.find((u: any) => u.id === obj.userId) || null;
   if (include.waybills) {
-    obj.waybills = db.waybills
-      .filter((w: any) => w.batchId === obj.id)
-      .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
-    if (include.waybills.include) {
-      obj.waybills = obj.waybills.map((w: any) => resolveIncludes(w, include.waybills.include));
-    }
+    obj.waybills = db.waybills.filter((w: any) => w.batchId === obj.id).sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    if (include.waybills.include) obj.waybills = obj.waybills.map((w: any) => resolveIncludes(w, include.waybills.include));
   }
   if (include.batches) {
-    obj.batches = db.batches
-      .filter((b: any) => b.driverId === obj.id)
-      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    if (include.batches.include) {
-      obj.batches = obj.batches.map((b: any) => resolveIncludes(b, include.batches.include));
-    }
+    obj.batches = db.batches.filter((b: any) => b.driverId === obj.id).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    if (include.batches.include) obj.batches = obj.batches.map((b: any) => resolveIncludes(b, include.batches.include));
   }
   return obj;
 }
 
 export const prisma = {
-  // Auto-persist wrapper
-  _persist: () => persist(),
   user: {
     findMany: (args?: any) => {
       let list = [...db.users];
@@ -320,9 +301,7 @@ export const prisma = {
       const list = db.drivers;
       if (args?.where) {
         return list.find((d: any) => {
-          for (const k of Object.keys(args.where)) {
-            if (d[k] !== args.where[k]) return false;
-          }
+          for (const k of Object.keys(args.where)) if (d[k] !== args.where[k]) return false;
           return true;
         }) || null;
       }
