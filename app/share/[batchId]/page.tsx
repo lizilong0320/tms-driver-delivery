@@ -9,18 +9,20 @@ export default function SharePage() {
 
   useEffect(() => {
     fetch(`/api/batches/${batchId}?public=1`)
-      .then(r => r.json()).then(d => { setData(d.data || d); setLoading(false); })
+      .then(r => r.json()).then(d => { if (d.error) { setData(null); } else { setData(d.data || d); } setLoading(false); })
       .catch(() => setLoading(false));
   }, [batchId]);
 
   if (loading) return <div className="flex items-center justify-center min-h-screen bg-gray-50"><p>加载中...</p></div>;
-  if (!data) return <div className="flex items-center justify-center min-h-screen bg-gray-50"><div className="text-center"><div className="text-5xl mb-4">📋</div><h1 className="text-xl font-bold text-gray-800">派送单不存在</h1><p className="text-gray-500 mt-2">该配送批次可能已被删除</p></div></div>;
+  if (!data || data.error) return <div className="flex items-center justify-center min-h-screen bg-gray-50"><div className="text-center"><div className="text-5xl mb-4">📋</div><h1 className="text-xl font-bold text-gray-800">派送单不存在</h1><p className="text-gray-500 mt-2">该配送批次可能已被删除</p></div></div>;
 
   const batch = data.data || data;
   const waybills = batch.waybills || [];
   const tempCounts: Record<string, number> = {};
   let totalW = 0, totalP = 0;
   waybills.forEach((w: any) => { tempCounts[w.temperatureLayer] = (tempCounts[w.temperatureLayer] || 0) + 1; totalW += w.weight || 0; totalP += w.packageCount || 0; });
+
+  const deliveryDateStr = batch.deliveryDate ? new Date(batch.deliveryDate).toLocaleDateString('zh-CN') : '未指定';
 
   const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/share/${batchId}` : '';
 
@@ -36,7 +38,7 @@ export default function SharePage() {
           <div className="grid grid-cols-3 gap-2 text-sm">
             <div><span className="text-gray-500">司机</span><br/><span className="font-bold">{batch.driverName}</span></div>
             <div><span className="text-gray-500">车牌</span><br/><span className="font-bold">{batch.plateNo || '-'}</span></div>
-            <div><span className="text-gray-500">日期</span><br/><span className="font-bold">{new Date(batch.deliveryDate).toLocaleDateString('zh-CN')}</span></div>
+            <div><span className="text-gray-500">日期</span><br/><span className="font-bold">{deliveryDateStr}</span></div>
           </div>
           <div className="mt-2 text-sm"><span className="text-gray-500">电话: </span><a href={`tel:${batch.driverPhone}`} className="text-blue-600 font-bold">{batch.driverPhone}</a></div>
           <div className="mt-2 flex gap-2 text-xs"><span className="bg-gray-100 px-2 py-1 rounded">总{waybills.length}单</span><span className="bg-gray-100 px-2 py-1 rounded">{totalP}件</span><span className="bg-gray-100 px-2 py-1 rounded">{totalW.toFixed(1)}kg</span></div>

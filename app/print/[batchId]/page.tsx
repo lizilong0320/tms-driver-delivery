@@ -9,12 +9,12 @@ export default function PrintPage() {
 
   useEffect(() => {
     fetch(`/api/batches/${batchId}`)
-      .then(r => r.json()).then(d => { setData(d.data || d); setLoading(false); })
+      .then(r => r.json()).then(d => { if (d.error) { setData(null); } else { setData(d.data || d); } setLoading(false); })
       .catch(() => setLoading(false));
   }, [batchId]);
 
   if (loading) return <div className="flex items-center justify-center min-h-screen"><p>加载中...</p></div>;
-  if (!data) return <div className="flex items-center justify-center min-h-screen"><p>批次不存在</p></div>;
+  if (!data || data.error) return <div className="flex items-center justify-center min-h-screen"><p>批次不存在</p></div>;
 
   const batch = data.data || data;
   const waybills = batch.waybills || [];
