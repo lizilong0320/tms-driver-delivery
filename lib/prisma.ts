@@ -24,6 +24,7 @@ function initDB() {
     users: [
       { id: 1, phone: 'admin', name: '管理员', password: hash, role: 'admin', status: 1, createdAt: now },
       { id: 2, phone: '13900010001', name: '张师傅', password: hash, role: 'driver', status: 1, createdAt: now },
+      { id: 3, phone: '13900010002', name: '刘师傅', password: hash, role: 'driver', status: 1, createdAt: now },
     ],
     drivers: [
       { id: 1, userId: 1, plateNo: null, vehicleType: null, status: 1, idCard: null },
@@ -81,10 +82,15 @@ async function loadFromStorage() {
         console.log('Gist load failed:', res.status);
       }
     } else {
-      try {
-        const txt = await fs.readFile(TMP_DB_PATH, 'utf-8');
-        remote = JSON.parse(txt);
-      } catch {}
+      // Try multiple /tmp paths
+      for (const p of [TMP_DB_PATH, '/tmp/tms-db-fallback.json', '/tmp/tms-db.json']) {
+        try {
+          const txt = await fs.readFile(p, 'utf-8');
+          remote = JSON.parse(txt);
+          console.log(`Loaded from ${p}`);
+          break;
+        } catch {}
+      }
     }
     if (remote && remote.users && remote.waybills) {
       db = { ...initDB(), ...remote };
@@ -101,8 +107,8 @@ async function loadFromStorage() {
 }
 
 function saveToStorage() {
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
+  // Fire-and-forget save (no debounce) for stronger durability
+  (async () => {
     try {
       if (REMOTE_ENABLED) {
         const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
@@ -115,12 +121,15 @@ function saveToStorage() {
         if (res.ok) console.log('Saved to Gist');
         else console.log('Gist save failed:', res.status, (await res.text()).substring(0, 200));
       } else {
+        // Write to /tmp - Vercel keeps /tmp alive during warm Lambda invocations
         await fs.writeFile(TMP_DB_PATH, JSON.stringify(db), 'utf-8');
+        // Also write to a fallback location
+        await fs.writeFile('/tmp/tms-db-fallback.json', JSON.stringify(db), 'utf-8');
       }
     } catch (e) {
       console.log('Save error:', e);
     }
-  }, 200);
+  })();
 }
 
 export async function ensureLoaded() {
