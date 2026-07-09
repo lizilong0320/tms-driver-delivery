@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { prisma, ensureLoaded } from '@/lib/prisma'
+import { prisma, ensureLoaded, refreshFromDB } from '@/lib/prisma'
 
 export async function GET() {
-  try { await ensureLoaded();
+  try { await ensureLoaded(); await refreshFromDB();
     const session = await getSession()
     if (!session) {
       return NextResponse.json(null)

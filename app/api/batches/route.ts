@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureLoaded } from '@/lib/prisma'
+import { prisma, ensureLoaded, refreshFromDB } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 import { generateBatchNo } from '@/lib/utils'
 
 export async function GET(request: NextRequest) {
-  try { await ensureLoaded();
+  try { await ensureLoaded(); await refreshFromDB();
     const session = await getSession()
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
 
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  try { await ensureLoaded();
+  try { await ensureLoaded(); await refreshFromDB();
     const session = await getSession()
     if (!session) return NextResponse.json({ error: '未登录' }, { status: 401 })
 

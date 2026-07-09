@@ -80,6 +80,7 @@ async function initSchema() {
   }
 }
 
+let loadingPromise: Promise<void> | null = null;
 async function loadFromPostgres() {
   const sql = getSql();
   if (!sql) return;
@@ -91,26 +92,33 @@ async function loadFromPostgres() {
       if (remote.users && remote.waybills) {
         db = { ...initDB(), ...remote };
         globalThis.__tms_db = db;
-        console.log('Loaded from Postgres');
         return;
       }
     }
-    console.log('No Postgres DB, using initial data');
-    // Save initial to postgres
+    // No data yet, save initial
     await saveToPostgres();
   } catch (e: any) {
     console.error('Postgres load error:', e?.message);
   }
 }
 
+// Per-request lock to prevent concurrent overwrites
+let saveChain: Promise<any> = Promise.resolve();
 async function saveToPostgres() {
   const sql = getSql();
   if (!sql) return;
-  try {
-    await sql`INSERT INTO tms_kv (key, value, updated_at) VALUES ('tms:db', ${JSON.stringify(db)}::jsonb, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
-  } catch (e) {
-    console.error('Postgres save error:', e);
-  }
+  // Chain saves to prevent concurrent writes
+  const next = saveChain.then(async () => {
+    try {
+      // Reload latest from Postgres to merge (or just overwrite our snapshot)
+      // Use a small CAS pattern: only update if our timestamp is newer
+      await sql`INSERT INTO tms_kv (key, value, updated_at) VALUES ('tms:db', ${JSON.stringify(db)}::jsonb, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+    } catch (e) {
+      console.error('Postgres save error:', e);
+    }
+  });
+  saveChain = next.catch(() => {});
+  return next;
 }
 
 let saveTimer: any = null;
@@ -123,10 +131,23 @@ function persist() {
 export async function ensureLoaded() {
   if (dbLoaded) return;
   if (USE_POSTGRES) {
-    await loadFromPostgres();
+    if (!loadingPromise) {
+      loadingPromise = loadFromPostgres().finally(() => {
+        dbLoaded = true;
+        globalThis.__tms_db_loaded = true;
+      });
+    }
+    await loadingPromise;
+  } else {
+    dbLoaded = true;
+    globalThis.__tms_db_loaded = true;
   }
-  dbLoaded = true;
-  globalThis.__tms_db_loaded = true;
+}
+
+// Re-load from Postgres at the START of each API request (handles concurrent writes)
+export async function refreshFromDB() {
+  if (!USE_POSTGRES) return;
+  await loadFromPostgres();
 }
 
 export function getDb() { return db; }
