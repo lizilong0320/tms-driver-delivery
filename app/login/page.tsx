@@ -51,8 +51,8 @@ export default function LoginPage() {
           <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <span className="text-white text-2xl font-bold">ZT</span>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">中通冷链司机TMS</h1>
-          <p className="text-gray-500 mt-1">末端城配派送管理系统</p>
+          <h1 className="text-2xl font-bold text-gray-900">中通冷链 TMS</h1>
+          <p className="text-gray-500 mt-1">末端城配派送管理平台</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">

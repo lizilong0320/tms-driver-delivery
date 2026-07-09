@@ -19,15 +19,18 @@ export async function GET(request: NextRequest) {
       orderBy: { id: 'desc' },
     })
 
-    // Flatten: add name/phone from user relation (in-memory store has no include, look up directly)
-    const flat = drivers.map((d: any) => {
-      const user = (globalThis as any).__tms_db?.users?.find((u: any) => u.id === d.userId);
-      return {
-        ...d,
-        name: user?.name || '未知',
-        phone: user?.phone || '',
-      };
-    })
+    // Flatten: add name/phone from user relation, filter only actual drivers
+    const flat = drivers
+      .map((d: any) => {
+        const user = (globalThis as any).__tms_db?.users?.find((u: any) => u.id === d.userId);
+        return {
+          ...d,
+          name: user?.name || '未知',
+          phone: user?.phone || '',
+          role: user?.role || '',
+        };
+      })
+      .filter((d: any) => d.role === 'driver');
 
     return NextResponse.json(flat)
   } catch (e) {

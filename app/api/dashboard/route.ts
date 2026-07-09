@@ -19,12 +19,15 @@ export async function GET() {
 
     // 司机排行
     const drivers = await prisma.driver.findMany();
+    const tms_db = (globalThis as any).__tms_db || { users: [] };
     const driverRank = drivers
+      .filter((d: any) => tms_db.users.find((u: any) => u.id === d.userId)?.role === 'driver')
       .map((d: any) => {
+        const user = tms_db.users.find((u: any) => u.id === d.userId);
         const batches = d.batches || [];
         const wbs = batches.flatMap((b: any) => b.waybills || []);
         const count = wbs.filter((w: any) => w.status === 3).length;
-        return { name: d.user?.name || '司机', plateNo: d.plateNo || '', count };
+        return { name: user?.name || '司机', plateNo: d.plateNo || '', count };
       })
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
