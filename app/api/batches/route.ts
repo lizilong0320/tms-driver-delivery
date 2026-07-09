@@ -34,13 +34,13 @@ export async function GET(request: NextRequest) {
     })
 
     // Add waybill count and driver name/phone to each batch
-    const db_users = (globalThis as any).__tms_db?.users || [];
+    const tms_db = (globalThis as any).__tms_db || { drivers: [], waybills: [], users: [] };
     const enriched = batches.map((b: any) => {
-      const driver = db.drivers.find((d: any) => d.id === b.driverId);
-      const driverUser = driver ? db_users.find((u: any) => u.id === driver.userId) : null;
+      const driver = tms_db.drivers.find((d: any) => d.id === b.driverId);
+      const driverUser = driver ? tms_db.users.find((u: any) => u.id === driver.userId) : null;
       return {
         ...b,
-        waybillCount: db.waybills.filter((w: any) => w.batchId === b.id).length,
+        waybillCount: tms_db.waybills.filter((w: any) => w.batchId === b.id).length,
         driver: driver ? { ...driver, name: driverUser?.name || '', phone: driverUser?.phone || '' } : null,
         driverName: driverUser?.name || '未分配',
         driverPhone: driverUser?.phone || '',
@@ -68,7 +68,8 @@ export async function POST(request: NextRequest) {
     // Find driver info
     const driver = await prisma.driver.findUnique({ where: { id: driverId } })
     if (!driver) return NextResponse.json({ error: '司机不存在' }, { status: 404 })
-    const driverUser = db.users.find((u: any) => u.id === driver.userId)
+    const tms_db = (globalThis as any).__tms_db || { users: [], waybills: [] };
+    const driverUser = tms_db.users.find((u: any) => u.id === driver.userId)
 
     // Create batch with driver info
     const batch = await prisma.batch.create({
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Update batch stats
-    const wbs = db.waybills.filter((w: any) => w.batchId === batch.id)
+    const wbs = tms_db.waybills.filter((w: any) => w.batchId === batch.id)
     const tw = wbs.reduce((s: number, w: any) => s + w.weight, 0)
     const tp = wbs.reduce((s: number, w: any) => s + w.packageCount, 0)
     await prisma.batch.update({
