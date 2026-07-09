@@ -1,16 +1,16 @@
-// In-memory store with Vercel KV / Upstash persistence (free tier)
-// Falls back to /tmp file when no KV configured
+// In-memory store with GitHub Gist persistence (free, public Gist API)
+// Falls back to /tmp file when no token configured
 import bcrypt from 'bcryptjs';
 import { promises as fs } from 'fs';
-import path from 'path';
 
 declare global { var __tms_db: any; }
 declare global { var __tms_db_loaded: boolean; }
 
-// Persistence: Vercel KV (preferred), /tmp file (fallback)
-const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || '';
-const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '';
-const REMOTE_ENABLED = !!KV_URL && !!KV_TOKEN;
+// GitHub Gist config (free, requires just a Personal Access Token)
+const GIST_TOKEN = process.env.TMS_GIST_TOKEN || '';
+const GIST_ID = process.env.TMS_GIST_ID || ''; // Existing Gist ID for the DB
+const GIST_FILE_NAME = 'tms-db.json';
+const REMOTE_ENABLED = !!GIST_TOKEN && !!GIST_ID;
 const TMP_DB_PATH = process.env.TMS_TMP_DB || '/tmp/tms-db.json';
 
 let db = globalThis.__tms_db;
@@ -63,29 +63,23 @@ function nextId(table: string) {
 // ========== Persistence layer ==========
 let saveTimer: any = null;
 
-async function kvGet(key: string): Promise<any | null> {
-  const res = await fetch(`${KV_URL}/get/${encodeURIComponent(key)}`, {
-    headers: { Authorization: `Bearer ${KV_TOKEN}` },
-  });
-  if (!res.ok) return null;
-  const json = await res.json();
-  return json.result ? JSON.parse(json.result) : null;
-}
-
-async function kvSet(key: string, value: any): Promise<void> {
-  await fetch(`${KV_URL}/set/${encodeURIComponent(key)}`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(value),
-  });
-}
-
 async function loadFromStorage() {
   if (dbLoaded) return;
   try {
     let remote: any = null;
     if (REMOTE_ENABLED) {
-      remote = await kvGet('tms:db');
+      const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+        headers: { Authorization: `token ${GIST_TOKEN}`, Accept: 'application/vnd.github.v3+json' },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const file = json.files[GIST_FILE_NAME];
+        if (file && file.content) {
+          remote = JSON.parse(file.content);
+        }
+      } else {
+        console.log('Gist load failed:', res.status);
+      }
     } else {
       try {
         const txt = await fs.readFile(TMP_DB_PATH, 'utf-8');
@@ -95,7 +89,7 @@ async function loadFromStorage() {
     if (remote && remote.users && remote.waybills) {
       db = { ...initDB(), ...remote };
       globalThis.__tms_db = db;
-      console.log(`Loaded from ${REMOTE_ENABLED ? 'KV' : '/tmp'}`);
+      console.log(`Loaded from ${REMOTE_ENABLED ? 'Gist' : '/tmp'}`);
     } else {
       console.log(`No remote DB, using initial data`);
     }
@@ -111,16 +105,22 @@ function saveToStorage() {
   saveTimer = setTimeout(async () => {
     try {
       if (REMOTE_ENABLED) {
-        await kvSet('tms:db', db);
-        console.log('Saved to KV');
+        const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+          method: 'PATCH',
+          headers: { Authorization: `token ${GIST_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            files: { [GIST_FILE_NAME]: { content: JSON.stringify(db) } },
+          }),
+        });
+        if (res.ok) console.log('Saved to Gist');
+        else console.log('Gist save failed:', res.status, (await res.text()).substring(0, 200));
       } else {
         await fs.writeFile(TMP_DB_PATH, JSON.stringify(db), 'utf-8');
-        console.log('Saved to /tmp');
       }
     } catch (e) {
       console.log('Save error:', e);
     }
-  }, 100);
+  }, 200);
 }
 
 export async function ensureLoaded() {
