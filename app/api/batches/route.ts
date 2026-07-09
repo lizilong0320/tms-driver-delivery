@@ -17,7 +17,10 @@ export async function GET(request: NextRequest) {
 
     const where: any = {}
     if (driverId) where.driverId = parseInt(driverId)
-    if (status !== null && status !== '') where.status = parseInt(status)
+    if (status !== null && status !== '') {
+      const statusArr = String(status).split(',').map((s: string) => parseInt(s.trim())).filter((n: number) => !isNaN(n));
+      if (statusArr.length > 0) where.status = statusArr.length === 1 ? statusArr[0] : { in: statusArr };
+    }
     if (date) where.deliveryDate = date
 
     // For driver role, find their driver ID first

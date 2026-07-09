@@ -422,7 +422,10 @@ export const prisma = {
       let list = [...db.batches];
       const where = args?.where || {};
       if (where.driverId !== undefined) list = list.filter((b: any) => b.driverId === where.driverId);
-      if (where.status !== undefined) list = list.filter((b: any) => b.status === where.status);
+      if (where.status !== undefined) {
+        if (where.status?.in) list = list.filter((b: any) => where.status.in.includes(b.status));
+        else list = list.filter((b: any) => b.status === where.status);
+      }
       list.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       const skip = (args?.skip) || 0;
       const take = (args?.take) || 20;
