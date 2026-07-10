@@ -186,7 +186,13 @@ function resolveIncludes(obj: any, include: any): any {
   }
   if (include.user) obj.user = db.users.find((u: any) => u.id === obj.userId) || null;
   if (include.waybills) {
-    obj.waybills = db.waybills.filter((w: any) => w.batchId === obj.id).sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    obj.waybills = db.waybills.filter((w: any) => w.batchId === obj.id)
+      .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0))
+      .map((w: any) => ({
+        ...w,
+        temperatureType: w.temperatureLayer,
+        sequence: w.sortOrder,
+      }));
     if (include.waybills.include) obj.waybills = obj.waybills.map((w: any) => resolveIncludes(w, include.waybills.include));
   }
   if (include.batches) {

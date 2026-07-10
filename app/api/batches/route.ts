@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
     const batches = await prisma.batch.findMany({
       where,
       orderBy: { createdAt: 'desc' },
+      include: { waybills: { include: { warehouse: true, shipper: true } } },
     })
 
     // Add waybill count and driver name/phone to each batch
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
       const driverUser = driver ? tms_db.users.find((u: any) => u.id === driver.userId) : null;
       return {
         ...b,
-        waybillCount: tms_db.waybills.filter((w: any) => w.batchId === b.id).length,
+        waybillCount: b.waybills?.length || tms_db.waybills.filter((w: any) => w.batchId === b.id).length,
         driver: driver ? { ...driver, name: driverUser?.name || '', phone: driverUser?.phone || '' } : null,
         driverName: driverUser?.name || '未分配',
         driverPhone: driverUser?.phone || '',

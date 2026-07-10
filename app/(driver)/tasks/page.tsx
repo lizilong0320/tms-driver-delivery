@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { cn, formatDateTime, STATUS_MAP, TEMPERATURE_MAP } from '@/lib/utils';
+import { cn, STATUS_MAP, TEMPERATURE_MAP } from '@/lib/utils';
 
 interface Waybill {
-  id: string;
+  id: number;
   sequence: number;
   receiverName: string;
   receiverPhone: string;
@@ -17,7 +17,7 @@ interface Waybill {
 }
 
 interface Batch {
-  id: string;
+  id: number;
   batchNo: string;
   status: number;
   waybills: Waybill[];
@@ -37,6 +37,7 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [waybillActionLoading, setWaybillActionLoading] = useState<number | null>(null);
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -81,13 +82,13 @@ export default function TasksPage() {
     fetchTasks();
   }, [fetchTasks]);
 
-  const handleBatchAction = async (batchId: string, action: 'start' | 'finish') => {
-    setActionLoading(batchId);
+  const handleBatchAction = async (batchId: number, action: 'start' | 'finish') => {
+    setActionLoading(String(batchId));
     try {
       const res = await fetch(`/api/batches/${batchId}/${action}`, { method: 'POST' });
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.message || `${action === 'start' ? '开始' : '完成'}配送失败`);
+        throw new Error(data?.error || data?.message || `${action === 'start' ? '开始' : '完成'}配送失败`);
       }
       await fetchTasks();
     } catch (err: unknown) {
@@ -95,6 +96,39 @@ export default function TasksPage() {
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const handleWaybillAction = async (waybillId: number, action: 'sign' | 'exception') => {
+    setWaybillActionLoading(waybillId);
+    try {
+      const newStatus = action === 'sign' ? 3 : 4;
+      const res = await fetch(`/api/waybills/${waybillId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: newStatus,
+          ...(action === 'sign'
+            ? { signTime: new Date().toISOString(), signType: 'direct', signerName: '司机' }
+            : { exceptionType: '配送异常', exceptionDesc: '司机标记异常' }),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || '操作失败');
+      }
+      await fetchTasks();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : '操作失败');
+    } finally {
+      setWaybillActionLoading(null);
+    }
+  };
+
+  const openMap = (address: string, name: string) => {
+    window.open(
+      `https://uri.amap.com/search?keyword=${encodeURIComponent(address)}&callnative=1`,
+      '_blank',
+    );
   };
 
   if (loading) {
@@ -167,14 +201,12 @@ export default function TasksPage() {
             <span
               className={cn(
                 'px-3 py-1 rounded-full text-xs font-medium',
-                STATUS_MAP[batch.status]?.color === 'green'
-                  ? 'bg-green-50 text-green-600'
-                  : STATUS_MAP[batch.status]?.color === 'blue'
-                    ? 'bg-blue-50 text-blue-600'
-                    : 'bg-orange-50 text-orange-600'
+                batch.status === 0
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'bg-orange-50 text-orange-600',
               )}
             >
-              {STATUS_MAP[batch.status]?.label || '未知'}
+              {batch.status === 0 ? '待配送' : batch.status === 1 ? '配送中' : '已完成'}
             </span>
           </div>
 
@@ -194,64 +226,115 @@ export default function TasksPage() {
               return (
                 <div
                   key={waybill.id}
-                  onClick={() => router.push(`/task/${waybill.id}`)}
-                  className="bg-white rounded-xl shadow-sm p-4 active:bg-gray-50 cursor-pointer"
+                  className="bg-white rounded-xl shadow-sm p-4"
                 >
                   <div className="flex items-start gap-3">
                     {/* 序号 */}
-                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-[#07C160] text-white flex items-center justify-center text-lg font-bold">
+                    <div
+                      onClick={() => router.push(`/task/${waybill.id}`)}
+                      className="flex-shrink-0 w-10 h-10 rounded-full bg-[#07C160] text-white flex items-center justify-center text-lg font-bold cursor-pointer active:bg-green-600"
+                    >
                       {waybill.sequence || idx + 1}
                     </div>
 
                     {/* 内容 */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-base font-semibold text-gray-900 truncate">
-                          {waybill.receiverName}
-                        </span>
-                        <span
-                          className={cn(
-                            'px-2 py-0.5 rounded text-xs font-medium flex-shrink-0',
-                          )}
-                          style={{
-                            backgroundColor: tempInfo.bgColor,
-                            color: tempInfo.color,
-                          }}
-                        >
-                          {tempInfo.label}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-1 text-sm text-gray-500 mb-1">
-                        <span>📞</span>
-                        <a
-                          href={`tel:${waybill.receiverPhone}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-[#1677FF] underline"
-                        >
-                          {waybill.receiverPhone}
-                        </a>
-                      </div>
-
-                      <p className="text-sm text-gray-500 line-clamp-2 mb-2">
-                        {waybill.receiverAddress}
-                      </p>
-
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 text-xs text-gray-400">
-                          <span>{waybill.packageCount}件</span>
-                          <span>{waybill.weight}kg</span>
+                      <div
+                        className="cursor-pointer"
+                        onClick={() => router.push(`/task/${waybill.id}`)}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-base font-semibold text-gray-900 truncate">
+                            {waybill.receiverName}
+                          </span>
+                          <span
+                            className={cn(
+                              'px-2 py-0.5 rounded text-xs font-medium flex-shrink-0',
+                            )}
+                            style={{
+                              backgroundColor: tempInfo.bgColor,
+                              color: tempInfo.color,
+                            }}
+                          >
+                            {tempInfo.label}
+                          </span>
                         </div>
-                        <span
-                          className={cn('px-2 py-0.5 rounded text-xs font-medium')}
-                          style={{
-                            backgroundColor: statusInfo.color + '15',
-                            color: statusInfo.color,
-                          }}
-                        >
-                          {statusInfo.label}
-                        </span>
+
+                        <div className="flex items-center gap-1 text-sm text-gray-500 mb-1">
+                          <span>📞</span>
+                          <a
+                            href={`tel:${waybill.receiverPhone}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-[#1677FF] underline"
+                          >
+                            {waybill.receiverPhone}
+                          </a>
+                        </div>
+
+                        <p className="text-sm text-gray-500 mb-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openMap(waybill.receiverAddress, waybill.receiverName);
+                            }}
+                            className="text-left text-[#1677FF] underline hover:text-blue-800 line-clamp-2"
+                          >
+                            📍 {waybill.receiverAddress}
+                          </button>
+                        </p>
+
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3 text-xs text-gray-400">
+                            <span>{waybill.packageCount}件</span>
+                            <span>{waybill.weight}kg</span>
+                          </div>
+                          <span
+                            className={cn('px-2 py-0.5 rounded text-xs font-medium')}
+                            style={{
+                              backgroundColor: statusInfo.color + '15',
+                              color: statusInfo.color,
+                            }}
+                          >
+                            {statusInfo.label}
+                          </span>
+                        </div>
                       </div>
+
+                      {/* 操作按钮 */}
+                      {batch.status === 1 && waybill.status === 2 && (
+                        <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleWaybillAction(waybill.id, 'sign');
+                            }}
+                            disabled={waybillActionLoading === waybill.id}
+                            className={cn(
+                              'flex-1 py-2 rounded-lg text-sm font-bold transition-colors',
+                              waybillActionLoading === waybill.id
+                                ? 'bg-green-200 text-green-400'
+                                : 'bg-green-50 text-green-600 active:bg-green-100',
+                            )}
+                          >
+                            {waybillActionLoading === waybill.id ? '...' : '✅ 签收'}
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleWaybillAction(waybill.id, 'exception');
+                            }}
+                            disabled={waybillActionLoading === waybill.id}
+                            className={cn(
+                              'flex-1 py-2 rounded-lg text-sm font-bold transition-colors',
+                              waybillActionLoading === waybill.id
+                                ? 'bg-red-200 text-red-400'
+                                : 'bg-red-50 text-red-500 active:bg-red-100',
+                            )}
+                          >
+                            {waybillActionLoading === waybill.id ? '...' : '❌ 异常'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -264,15 +347,15 @@ export default function TasksPage() {
             {batch.status === 0 && (
               <button
                 onClick={() => handleBatchAction(batch.id, 'start')}
-                disabled={actionLoading === batch.id}
+                disabled={actionLoading === String(batch.id)}
                 className={cn(
                   'w-full h-14 rounded-xl text-white text-lg font-bold flex items-center justify-center gap-2',
-                  actionLoading === batch.id
+                  actionLoading === String(batch.id)
                     ? 'bg-green-400'
                     : 'bg-[#07C160] active:bg-green-600',
                 )}
               >
-                {actionLoading === batch.id ? (
+                {actionLoading === String(batch.id) ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     处理中...
@@ -285,15 +368,15 @@ export default function TasksPage() {
             {batch.status === 1 && (
               <button
                 onClick={() => handleBatchAction(batch.id, 'finish')}
-                disabled={actionLoading === batch.id}
+                disabled={actionLoading === String(batch.id)}
                 className={cn(
                   'w-full h-14 rounded-xl text-white text-lg font-bold flex items-center justify-center gap-2',
-                  actionLoading === batch.id
+                  actionLoading === String(batch.id)
                     ? 'bg-orange-400'
                     : 'bg-[#FF6B35] active:bg-orange-600',
                 )}
               >
-                {actionLoading === batch.id ? (
+                {actionLoading === String(batch.id) ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     处理中...
